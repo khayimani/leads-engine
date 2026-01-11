@@ -3,9 +3,7 @@ import pandas as pd
 from backend_core import process_job
 
 st.set_page_config(page_title="Leads Engine", page_icon="⚡", layout="wide")
-
-if "data" not in st.session_state:
-    st.session_state.data = []
+if "data" not in st.session_state: st.session_state.data = []
 
 st.title("⚡ AI Lead Generation Engine")
 
@@ -19,13 +17,20 @@ with st.sidebar:
 
 if st.session_state.data:
     df = pd.DataFrame(st.session_state.data)
-    # Reorder columns for importance
     cols = ["Name", "Email", "Company", "Role", "Intent", "Status"]
-    df = df[cols]
+    df = df.reindex(columns=cols)
     
-    st.metric("Success Rate", f"{int((df['Email'].count()/len(df))*100)}%")
+    # FIXED: Metric now correctly calculates hits vs total
+    total = len(df)
+    hits = df['Email'].notnull().sum()
+    rate = int((hits/total)*100) if total > 0 else 0
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Leads", total)
+    c2.metric("Emails Found", hits)
+    c3.metric("Success Rate", f"{rate}%")
+    
     st.dataframe(df, use_container_width=True)
-    
     st.download_button("📥 Download", df.to_csv(index=False), "leads.csv")
 else:
-    st.info("No leads found. Check your targeting.")
+    st.info("No leads found.")
