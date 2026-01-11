@@ -1,67 +1,62 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
-import time
 from backend_core import process_job
 
-# Page Config
 st.set_page_config(page_title="Leads Engine", page_icon="⚡", layout="wide")
-
-# Title
 st.title("⚡ AI Lead Generation Engine")
-st.markdown("### Multithreaded • Google Sniper • Email Crawler")
 
-# Sidebar: Inputs
+# --- SESSION STATE MANAGEMENT ---
+# This dictionary lives in RAM. It is unique to every user.
+# It deletes automatically when the tab is closed.
+if "data" not in st.session_state:
+    st.session_state.data = []
+
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("Targeting")
     role = st.text_input("Job Role", "Founder")
     industry = st.text_input("Industry", "Fintech")
     
     if st.button("🚀 Launch Scraper", type="primary"):
-        with st.spinner(f"Hunting {role}s in {industry}... (This uses 5 concurrent threads)"):
-            # Run the backend function directly
-            process_job(role, industry)
-        st.success("Job Finished!")
+        # CLEAR previous results automatically on new search
+        st.session_state.data = [] 
+        
+        with st.spinner(f"Hunting {role}s in {industry}..."):
+            # Get fresh data from backend
+            raw_results = process_job(role, industry)
+            st.session_state.data = raw_results
+            
+        st.success(f"Found {len(raw_results)} leads!")
 
-# Main Area: Results
+# --- MAIN DISPLAY ---
 st.divider()
 
-# Auto-refresh logic
-if "last_refresh" not in st.session_state:
-    st.session_state.last_refresh = 0
-
-def load_data():
-    conn = sqlite3.connect("leads_database.db", check_same_thread=False)
-    df = pd.read_sql("SELECT name, role, company, email, intent_score, status FROM leads", conn)
-    conn.close()
-    return df
-
-try:
-    df = load_data()
+if st.session_state.data:
+    # Convert list of dicts to DataFrame
+    df = pd.DataFrame(st.session_state.data)
     
+    # Move Email to front
+    cols = ["Name", "Email", "Company", "Role", "Intent", "Status"]
+    # Ensure columns exist even if empty
+    df = df.reindex(columns=cols)
+
     # Metrics
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Leads", len(df))
-    col2.metric("Emails Found", len(df[df["email"].notnull()]))
-    col3.metric("Hot Leads", len(df[df["intent_score"] == "HOT"]))
+    valid_emails = len(df[df["Email"].notnull()])
+    col2.metric("Emails Found", valid_emails)
+    col3.metric("Success Rate", f"{int((valid_emails/len(df))*100)}%")
     
-    # Table
-    st.dataframe(
-        df, 
-        use_container_width=True,
-        column_config={
-            "email": st.column_config.TextColumn("Email", help="Verified via Google/Crawling"),
-            "intent_score": st.column_config.TextColumn("Intent", help="Hiring signals"),
-        }
-    )
+    # Display Table
+    st.dataframe(df, use_container_width=True)
     
-    # Download Button
+    # Download
+    csv = df.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="📥 Download CSV",
-        data=df.to_csv(index=False).encode('utf-8'),
+        data=csv,
         file_name='leads_export.csv',
         mime='text/csv',
     )
-    
-except Exception as e:
-    st.info("Database empty. Run a job to see results.")
+else:
+    st.info("No data in current session. Start a search.")
