@@ -2,6 +2,7 @@ import requests
 import json
 import re
 import concurrent.futures
+import random
 from email_engine import EmailEngine
 
 # --- CONFIGURATION ---
@@ -12,8 +13,6 @@ engine = EmailEngine(SERPER_API_KEY)
 
 # ---------------- SCRAPER ----------------
 def scrape_linkedin_leads(role, industry, limit=10):
-    # This function remains exactly the same as your preferred version.
-    # It fetches the raw list of names/companies from Google.
     print(f"[*] Scraping LinkedIn for {role} in {industry}...")
     url = "https://google.serper.dev/search"
     query = f'site:linkedin.com/in "{role}" "{industry}"'
@@ -34,18 +33,23 @@ def scrape_linkedin_leads(role, industry, limit=10):
         snippet = r.get("snippet", "")
         link = r.get("link", "")
         
-        # [Keep your existing parsing logic here]
-        # ... (Abbreviated for brevity, paste your parsing logic from the previous file) ...
-        # Standard parsing logic:
+        # --- PARSING ---
         clean_title = title.replace(" | LinkedIn", "").replace(" - LinkedIn", "")
         parts = clean_title.split(" - ")
         name = parts[0]
+        
         company = "Unknown"
-        if len(parts) >= 3: company = parts[-1].strip()
+        if len(parts) >= 3:
+            company = parts[-1].strip()
+        
+        # Fallback to snippet if company is missing
         if company == "Unknown":
             match = re.search(r"(?:at|of)\s+([A-Z][a-zA-Z0-9&]+(?: [A-Z][a-zA-Z0-9&]+)?)", snippet)
-            if match: company = match.group(1).strip()
-            
+            if match:
+                candidate = match.group(1).strip()
+                if candidate.lower() not in ["the", "a", "fintech", "startup"]:
+                    company = candidate
+
         leads.append({
             "name": name,
             "role": role,
@@ -77,11 +81,14 @@ def process_lead(lead):
 def process_job(role, industry):
     """
     Runs the full job and RETURNS a list of dictionaries.
-    No database saving.
+    CRITICAL: This must return a list, NOT save to DB.
     """
     # 1. Scrape
     leads = scrape_linkedin_leads(role, industry, limit=10)
     
+    if not leads:
+        return [] # Return empty list if no leads found
+
     # 2. Enrich (Parallel)
     results = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
@@ -89,4 +96,4 @@ def process_job(role, industry):
         processed = list(executor.map(process_lead, leads))
         results.extend(processed)
         
-    return results
+    return results  # <--- THIS IS THE FIX. The old code didn't have this.
