@@ -1,52 +1,67 @@
 import streamlit as st
-import requests
 import pandas as pd
+import sqlite3
 import time
+from backend_core import process_job
 
-API_URL = "http://127.0.0.1:8000"
+# Page Config
+st.set_page_config(page_title="Leads Engine", page_icon="⚡", layout="wide")
 
-st.set_page_config(page_title="Leads Sniper", page_icon="🎯")
-st.title("🎯 B2B Lead Sniper")
+# Title
+st.title("⚡ AI Lead Generation Engine")
+st.markdown("### Multithreaded • Google Sniper • Email Crawler")
 
-# --- CONTROL PANEL ---
-col1, col2 = st.columns(2)
-with col1:
-    role = st.text_input("Target Role", "Marketing Director")
-with col2:
-    industry = st.text_input("Target Industry", "SaaS")
+# Sidebar: Inputs
+with st.sidebar:
+    st.header("Targeting")
+    role = st.text_input("Job Role", "Founder")
+    industry = st.text_input("Industry", "Fintech")
+    
+    if st.button("🚀 Launch Scraper", type="primary"):
+        with st.spinner(f"Hunting {role}s in {industry}... (This uses 5 concurrent threads)"):
+            # Run the backend function directly
+            process_job(role, industry)
+        st.success("Job Finished!")
 
-if st.button("🚀 Launch Scraper", type="primary"):
-    try:
-        # Send command to API
-        requests.post(f"{API_URL}/start-job", params={"role": role, "industry": industry})
-        st.toast(f"Scraping started for {role}...", icon="🤖")
-    except requests.exceptions.ConnectionError:
-        st.error("🚨 Error: Is api.py running?")
-
+# Main Area: Results
 st.divider()
 
-# --- LIVE RESULTS ---
-st.subheader("📥 Captured Leads")
+# Auto-refresh logic
+if "last_refresh" not in st.session_state:
+    st.session_state.last_refresh = 0
 
-if st.button("🔄 Refresh Data"):
-    try:
-        response = requests.get(f"{API_URL}/leads")
-        data = response.json()
-        
-        if data:
-            df = pd.DataFrame(data)
-            # Reorder columns for readability
-            df = df[['name', 'role', 'company', 'email', 'intent_score', 'url']]
-            st.dataframe(
-                df, 
-                column_config={
-                    "url": st.column_config.LinkColumn("LinkedIn Profile"),
-                    "email": st.column_config.TextColumn("Email Address", help="Verified by Tomba")
-                },
-                hide_index=True
-            )
-        else:
-            st.info("Database is empty. Launch a scraper job!")
-            
-    except requests.exceptions.ConnectionError:
-        st.error("Cannot connect to API.")
+def load_data():
+    conn = sqlite3.connect("leads_database.db", check_same_thread=False)
+    df = pd.read_sql("SELECT name, role, company, email, intent_score, status FROM leads", conn)
+    conn.close()
+    return df
+
+try:
+    df = load_data()
+    
+    # Metrics
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Leads", len(df))
+    col2.metric("Emails Found", len(df[df["email"].notnull()]))
+    col3.metric("Hot Leads", len(df[df["intent_score"] == "HOT"]))
+    
+    # Table
+    st.dataframe(
+        df, 
+        use_container_width=True,
+        column_config={
+            "email": st.column_config.TextColumn("Email", help="Verified via Google/Crawling"),
+            "intent_score": st.column_config.TextColumn("Intent", help="Hiring signals"),
+        }
+    )
+    
+    # Download Button
+    st.download_button(
+        label="📥 Download CSV",
+        data=df.to_csv(index=False).encode('utf-8'),
+        file_name='leads_export.csv',
+        mime='text/csv',
+    )
+    
+except Exception as e:
+    st.info("Database empty. Run a job to see results.")

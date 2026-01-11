@@ -1,7 +1,6 @@
-fastapi
-uvicorn
+streamlit
+pandas
 requests
 beautifulsoup4
 dnspython
-streamlit
-pandas
+python-dotenv
