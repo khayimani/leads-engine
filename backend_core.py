@@ -1,19 +1,16 @@
 import requests
 import json
 import re
+import html
 import concurrent.futures
-import random
 from email_engine import EmailEngine
 
-# --- CONFIGURATION ---
 SERPER_API_KEY = "e3b6016ca8de93b72ee9d85593448539c84160f8"
 MAX_WORKERS = 5
 
 engine = EmailEngine(SERPER_API_KEY)
 
-# ---------------- SCRAPER ----------------
-def scrape_linkedin_leads(role, industry, limit=10):
-    print(f"[*] Scraping LinkedIn for {role} in {industry}...")
+def scrape_linkedin_leads(role, industry, limit=15):
     url = "https://google.serper.dev/search"
     query = f'site:linkedin.com/in "{role}" "{industry}"'
     payload = {"q": query, "num": limit}
@@ -26,74 +23,58 @@ def scrape_linkedin_leads(role, industry, limit=10):
         return []
 
     leads = []
-    if "organic" not in data: return []
-
-    for r in data["organic"]:
+    for r in data.get("organic", []):
         title = r.get("title", "")
-        snippet = r.get("snippet", "")
-        link = r.get("link", "")
+        snippet = html.unescape(r.get("snippet", ""))
         
-        # --- PARSING ---
+        # --- 1. EXTRACT NAME ---
         clean_title = title.replace(" | LinkedIn", "").replace(" - LinkedIn", "")
-        parts = clean_title.split(" - ")
-        name = parts[0]
+        name = clean_title.split(" - ")[0].split(" | ")[0].strip()
         
+        # --- 2. EXTRACT COMPANY (STRICT DOT LOGIC) ---
         company = "Unknown"
-        if len(parts) >= 3:
-            company = parts[-1].strip()
+        # Check snippet for " at [Company] · "
+        match = re.search(r" at ([^·|]+)[·|]", snippet)
+        if match:
+            company = match.group(1).strip()
         
-        # Fallback to snippet if company is missing
-        if company == "Unknown":
-            match = re.search(r"(?:at|of)\s+([A-Z][a-zA-Z0-9&]+(?: [A-Z][a-zA-Z0-9&]+)?)", snippet)
-            if match:
-                candidate = match.group(1).strip()
-                if candidate.lower() not in ["the", "a", "fintech", "startup"]:
-                    company = candidate
+        # Fallback to Title Split
+        if (company == "Unknown" or len(company) > 35) and " - " in clean_title:
+            parts = clean_title.split(" - ")
+            if len(parts) >= 3:
+                company = parts[-1].strip()
 
-        leads.append({
-            "name": name,
-            "role": role,
-            "company": company,
-            "url": link,
-            "snippet": snippet
-        })
+        # Final Clean: Remove locations
+        if company in ["San Francisco", "United States", "New York", "London", "Area"]:
+            company = "Unknown"
+
+        if name and company != "Unknown":
+            leads.append({
+                "name": name,
+                "role": role,
+                "company": company,
+                "url": r.get("link"),
+                "snippet": snippet
+            })
     return leads
 
-# ---------------- WORKER ----------------
 def process_lead(lead):
-    """Enriches a single lead in memory."""
-    # Run the engine
+    # This calls your email_engine.py
     email = engine.hunt(lead["name"], lead["company"])
-    intent = "HOT" if "hiring" in lead["snippet"].lower() else "COLD"
-    
-    # Return a dictionary (Row of data)
     return {
         "Name": lead["name"],
-        "Role": lead["role"],
-        "Company": lead["company"],
         "Email": email,
-        "Status": "Verified" if email else "Not Found",
-        "Intent": intent,
-        "URL": lead["url"]
+        "Company": lead["company"],
+        "Role": lead["role"],
+        "Intent": "HOT" if "hiring" in lead["snippet"].lower() else "COLD",
+        "Status": "Verified" if email else "Not Found"
     }
 
-# ---------------- PIPELINE ----------------
 def process_job(role, industry):
-    """
-    Runs the full job and RETURNS a list of dictionaries.
-    CRITICAL: This must return a list, NOT save to DB.
-    """
-    # 1. Scrape
-    leads = scrape_linkedin_leads(role, industry, limit=10)
-    
+    leads = scrape_linkedin_leads(role, industry)
     if not leads:
-        return [] # Return empty list if no leads found
-
-    # 2. Enrich (Parallel)
-    results = []
+        return []
+    
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # map returns results in the same order as inputs
-        processed = list(executor.map(process_lead, leads))
-        results.extend(processed)
-        
-    return results  # <--- THIS IS THE FIX. The old code didn't have this.
+        results = list(executor.map(process_lead, leads))
+    return results
