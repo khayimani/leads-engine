@@ -13,14 +13,17 @@ export default function DashboardPage() {
   const [role, setRole] = React.useState("Founder");
   const [industry, setIndustry] = React.useState("Fintech");
   const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
   const [leads, setLeads] = React.useState<Lead[]>([]);
 
   const fetchLeads = React.useCallback(async () => {
     try {
       const data = await api.getLeads();
       setLeads(data);
-    } catch (error) {
-      console.error("Failed to fetch leads:", error);
+      setError(null);
+    } catch (err) {
+      console.error("Failed to fetch leads:", err);
+      // Don't set global error here to avoid blocking UI, maybe just log or toast
     }
   }, []);
 
@@ -41,13 +44,15 @@ export default function DashboardPage() {
     if (!role || !industry) return;
 
     setLoading(true);
+    setError(null);
     try {
       await api.startJob(role, industry);
       // We keep loading true to trigger polling
       // In a real app, we'd have a job ID to track
       setTimeout(() => setLoading(false), 30000); // Stop loading after 30s as a fallback
-    } catch (error) {
-      console.error("Failed to start job:", error);
+    } catch (err) {
+      console.error("Failed to start job:", err);
+      setError("Failed to start the scraping job. Please try again.");
       setLoading(false);
     }
   };
@@ -138,6 +143,11 @@ export default function DashboardPage() {
                   </>
                 )}
               </Button>
+              {error && (
+                <div className="p-3 text-sm text-red-600 bg-red-50 rounded-md mt-2">
+                  {error}
+                </div>
+              )}
             </div>
           </Card>
         </aside>

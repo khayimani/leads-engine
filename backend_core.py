@@ -2,12 +2,17 @@ import requests
 import json
 import re
 import html
+import os
 import concurrent.futures
 from email_engine import EmailEngine
 
 SERPER_API_KEY = "e3b6016ca8de93b72ee9d85593448539c84160f8"
 MAX_WORKERS = 5
 engine = EmailEngine(SERPER_API_KEY)
+
+# Database Configuration
+# Allow overriding the DB path for production (e.g. using a persistent volume)
+DB_NAME = os.getenv("DB_PATH", "leads_database.db")
 
 def scrape_linkedin_leads(role, industry, limit=15):
     url = "https://google.serper.dev/search"
@@ -63,5 +68,25 @@ def process_lead(lead):
 def process_job(role, industry):
     leads = scrape_linkedin_leads(role, industry)
     if not leads: return []
+    
+    processed_leads = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        return list(executor.map(process_lead, leads))
+        processed_leads = list(executor.map(process_lead, leads))
+
+    # Save to Database
+    if processed_leads:
+        import sqlite3
+        conn = sqlite3.connect(DB_NAME)
+        c = conn.cursor()
+        # Ensure table exists
+        c.execute('''CREATE TABLE IF NOT EXISTS leads
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                      Name TEXT, Email TEXT, Company TEXT, Role TEXT, Intent TEXT, Status TEXT)''')
+        
+        for lead in processed_leads:
+            c.execute("INSERT INTO leads (Name, Email, Company, Role, Intent, Status) VALUES (?, ?, ?, ?, ?, ?)",
+                      (lead['Name'], lead['Email'], lead['Company'], lead['Role'], lead['Intent'], lead['Status']))
+        conn.commit()
+        conn.close()
+        
+    return processed_leads
