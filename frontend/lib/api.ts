@@ -2,6 +2,7 @@ import axios from "axios";
 
 // Ensure API URL doesn't have a trailing slash
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+console.log("Configured API URL:", API_URL);
 
 export interface Lead {
     id: number;

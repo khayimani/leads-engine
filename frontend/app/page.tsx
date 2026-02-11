@@ -50,9 +50,10 @@ export default function DashboardPage() {
       // We keep loading true to trigger polling
       // In a real app, we'd have a job ID to track
       setTimeout(() => setLoading(false), 30000); // Stop loading after 30s as a fallback
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to start job:", err);
-      setError("Failed to start the scraping job. Please try again.");
+      const errorMessage = err.response?.data?.message || err.message || "Failed to start the scraping job. Please try again.";
+      setError(`Error: ${errorMessage}`);
       setLoading(false);
     }
   };
