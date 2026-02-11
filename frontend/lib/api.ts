@@ -1,0 +1,26 @@
+import axios from "axios";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+export interface Lead {
+    id: number;
+    Name: string;
+    Email: string | null;
+    Company: string;
+    Role: string;
+    Intent: string;
+    Status: string;
+}
+
+export const api = {
+    startJob: async (role: string, industry: string) => {
+        const response = await axios.post(`${API_URL}/start-job`, null, {
+            params: { role, industry },
+        });
+        return response.data;
+    },
+    getLeads: async (): Promise<Lead[]> => {
+        const response = await axios.get(`${API_URL}/leads`);
+        return response.data;
+    },
+};
